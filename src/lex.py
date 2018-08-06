@@ -11,6 +11,14 @@ class Token:
     def __repr__(self):
         return '<{0}> {1} {2} {3}'.format(self.tok, self.type, self.line, self.col)
 
+    def copy(self):
+        if self.tok:
+            s = self.tok[0:-1] + self.tok[-1]
+        else:
+            s = ''
+        n = Token(s,self.type,self.line,self.col)
+        return n
+
 
 nil_token = Token('', 'nil', 0, 0)
 

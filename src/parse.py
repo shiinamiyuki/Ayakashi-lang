@@ -10,7 +10,16 @@ class Parser:
         self.precedence = 0
         self.op_assoc = dict()
         self.init_op_precedence_and_assoc()
-        self.types = ['int', 'float', 'double', 'char']  # type: List[str]
+        self.types = [['int', 'float', 'double', 'char']]  # type: List[List[str]]
+
+    def push_type_scope(self):
+        self.types.append([])
+
+    def pop_type_scope(self):
+        self.types.pop()
+
+    def add_type(self, t: str, i:int= -1):
+        self.types[i].append(t)
 
     def init_op_precedence_and_assoc(self):
         for i in [x for x in '+= -= = *= /= %= >>= <<= &= |='.split(' ') if x]:
@@ -264,7 +273,10 @@ class Parser:
         while self.has_next() and not self.has('>'):
             if self.has('type'):
                 self.next()
-            type_list.append(self.parse_type())
+            t = self.parse_type()
+            type_list.append(t)
+            if t.is_primitive():
+                self.add_type(t.signature())
             if self.has('>'):
                 break
             self.expect(',')
@@ -274,7 +286,10 @@ class Parser:
     def is_next_token_type(self, i=1):
         try:
             tok = self.peek(i).tok
-            return tok in self.types
+            for i in self.types:
+                if tok in i:
+                    return True
+            return False
         except IndexError:
             return False
 
@@ -292,6 +307,7 @@ class Parser:
         func = FuncDef(self.peek())
         result = func
         self.next()
+        self.push_type_scope()
         if self.has('<'):
             result = self.parse_generic()
             result.add(func)
@@ -299,6 +315,7 @@ class Parser:
         self.expect('->')
         func.add(self.parse_type())
         func.add(self.parse_block())
+        self.pop_type_scope()
         return result
 
     def parse_func_def_arg(self):
@@ -332,7 +349,7 @@ class Parser:
     def parse_interface(self):
         self.expect('interface')
         result = Interface(self.peek())
-        self.types.append(result.tok.tok)
+        self.add_type(result.tok.tok,0)
         self.next()
         self.expect('{')
         while self.has_next() and not self.has('}'):
@@ -344,7 +361,8 @@ class Parser:
         self.expect('type')
         result = Struct(self.peek())
         struct = result
-        self.types.append(result.tok.tok)
+        self.push_type_scope()
+        self.add_type(result.tok.tok,0)
         self.next()
         if self.has('<'):
             result = self.parse_generic()
@@ -353,6 +371,7 @@ class Parser:
         while self.has_next() and not self.has('}'):
             struct.add(self.parse_declaration())
         self.expect('}')
+        self.pop_type_scope()
         return result
 
     def parse_primitive_type(self) -> Node:

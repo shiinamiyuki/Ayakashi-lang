@@ -2,7 +2,7 @@ from lex import *
 import copy
 from abc import abstractmethod
 from typing import List
-
+from copy import deepcopy
 
 class Node:
     def __init__(self):
@@ -45,6 +45,24 @@ class Node:
 
     def __len__(self) -> int:
         return len(self.sub_nodes)
+
+    def copy(self):
+        n = copy.copy(self)
+        n.tok = self.tok.copy()
+        n.depth = self.depth
+        n.index = self.index
+        n.precedence = self.precedence
+        n.sub_nodes = []
+        for i in self.sub_nodes:
+            n.sub_nodes.append(i.copy())
+        n.parent = self.parent
+        return n
+
+    def check(self, other):
+        assert self is not other
+        for i in self.sub_nodes:
+            for j in other.sub_nodes:
+                assert i is not j
 
     @abstractmethod
     def accept(self, visitor):
@@ -580,6 +598,11 @@ class ImplFor(Node):
     def accept(self, visitor):
         visitor.visit_impl_for(self)
 
+    def copy(self):
+        n = super().copy()
+        n.interface = deepcopy(self.interface)
+        return n
+
 
 class Generic(Node):
     def __init__(self, t: List[Type]):
@@ -600,6 +623,13 @@ class Generic(Node):
 
     def real_type_list(self) -> List[Type]:
         return self.type_list
+
+    def copy(self):
+        n = super().copy()
+        n.type_list = []
+        for i in self.type_list:
+            n.type_list.append(i.copy())
+        return n
 
 
 class TypeInference(Node):

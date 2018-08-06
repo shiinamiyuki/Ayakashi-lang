@@ -99,11 +99,12 @@ class CodeGen(Visitor):
 
     def retrieve_generic(self, s: str) -> Optional[Generic]:
         if s in self.generics:
-            return self.generics[s]
+            return (self.generics[s]).copy()
         return None
 
     def add_generic(self, s: str, n: Node):
-        self.generics[s] = n
+        if s not in self.generics:  # crucial
+            self.generics[s] = n
 
     def push_type(self, ty: Type):
         self.type_stack.append(ty)
@@ -565,7 +566,7 @@ class CodeGen(Visitor):
             a.append(i.first())
         # print(a)
         return Generic(self.deduct(a, type_list, ty))
-         #return Generic(ty)
+        # return Generic(ty)
 
     def reduce(self, g: Type, ty: Type) -> List[Tuple[Type, Type]]:
         """
@@ -599,6 +600,13 @@ class CodeGen(Visitor):
                 result.append((PrimitiveType.make_primitive(i[0]),
                                PrimitiveType.make_primitive(i[1])))
             return result
+        elif g.type() == 'RefType' or g.type() == 'ArrayType' or g.type() == 'PointerType':
+            if ty.type()!=g.type():
+                self.error('incompcatible type\n {0}\n {1}'.format(g,ty))
+            else:
+                return self.reduce(g.first(),ty.first())
+        else:
+            self.error(g)
 
     def deduct(self, arg: List[Type], g: List[Type], ty: List[Type]) -> List[Type]:
         m = dict()
@@ -609,7 +617,7 @@ class CodeGen(Visitor):
                     self.error('conflicting generic argument {0}'.format(a.signature()))
                 m[a.signature()] = b.signature()
         if len(m) != len(g):
-            self.error('{0} arguments expected but found{1}'.format(len(g),len(m)))
+            self.error('{0} arguments expected but found{1}'.format(len(g), len(m)))
         result = []
         for i in g:
             result.append(PrimitiveType.make_primitive(m[i.signature()]))
@@ -623,6 +631,7 @@ class CodeGen(Visitor):
             self.check_arg(func_type, ty)
         elif caller.type() == 'Identifier':
             func_name = caller.tok.tok
+            self.update_pos(caller.tok)
             if self.is_generic(func_name):
                 # generic = Generic(ty)
                 generic = self.generic_deduction(func_name, ty)
@@ -846,8 +855,10 @@ class CodeGen(Visitor):
         self.add_symbol(node.tok.tok, PrimitiveType.make_primitive(node.tok.tok))
 
     def visit_implementation(self, node):
+        #  print(node)
         struct_name = node.tok.tok
         struct = self.retrieve_symbol(struct_name)
+        node.link()
         s = ''
         for i in node.sub_nodes:
             struct.add_method(VarInfo(i.tok.tok, i.call_signature()))
@@ -923,6 +934,7 @@ class CodeGen(Visitor):
     def visit_impl_for(self, node):
         struct_name = node.interface.tok
         struct = self.interfaces[struct_name]
+        node.link()
         s = ''
         for i in node.sub_nodes:
             struct.add_method(VarInfo(i.tok.tok, i.call_signature()))
@@ -955,7 +967,9 @@ class CodeGen(Visitor):
                 # print(decorated_name)
                 f = self.retrieve_symbol(decorated_name)
                 if not f:  # not yet instantiated
-                    generic = self.retrieve_generic(func_name)
+                    generic = (self.retrieve_generic(func_name))
+                    generic.parent = None
+                    assert generic is not self.generics[func_name]
                     temp = self.type_stack
                     self.type_stack = []
                     if not generic:
@@ -999,11 +1013,12 @@ class CodeGen(Visitor):
     def instantiate_generic_impl(self, name: str, type_list: List[Type]):
         for i in self.generic_impls:
             if self.get_generic_impl_struct_name(i) == name:
-                k = deepcopy(i)
+                k = (i).copy()
                 self.instantiate_generic(k, type_list)
 
     def generic_decorate(self, name: str, type_list: List[Type]) -> str:
         s = ''
+        # assert '_GG_' not in name
         s += name + '_GG_'
         for i in type_list:
             s += i.signature() + '_GG_'
@@ -1018,35 +1033,42 @@ class CodeGen(Visitor):
             ))
         for i in range(0, len(generic_type_list)):
             type_map[generic_type_list[i].signature()] = type_list[i]
-        instance = None
-        # print(node)
-        p = node.parent
-        # node.parent = None
-        if not mutate:
-            instance = deepcopy(node)
-        else:
-            instance = node
-        node.parent = p
-        instance.parent = p
-        # print(instance)
-        self.instantiate_generic_with_type_map(instance, type_map)
+        instance = node.copy()
+
+        n0 = instance.first().tok.tok
+        g0 = self.generics[n0].copy() # self.generics is been modified by unknown source
+        assert instance.first() is not self.generics[n0].first()
+        idx = instance.index
+        p = instance.parent
+        instance = self.instantiate_generic_with_type_map(instance, type_map)
+        assert instance.first() is not self.generics[n0].first()
+        # instance = p.sub_nodes[idx]
+        instance.link()
+        self.generics[n0] = g0  # why? why?
         temp = instance.sub_nodes[0].tok.tok
         if instance.type() != "Struct":
-            instance.sub_nodes[0].tok.tok = \
-                self.generic_decorate(instance.first().tok.tok, type_list)
+            assert instance.first() is not self.generics[n0].first()
+            n = self.generic_decorate(n0, type_list)
+            # print(n,self.retrieve_symbol(n0))
+            t = instance.first().tok
+
+            if not self.retrieve_symbol(n0):
+                instance.sub_nodes[0].tok = Token(n, t.type,
+                                                  t.line, t.col)
+
+        # print(instance)
         instance.first().accept(self)
-        instance.sub_nodes[0].tok.tok = temp  # this is important, don't ask me why
+        # instance.sub_nodes[0].tok.tok = temp  # this is important, don't ask me why
         # parent = node.parent
         # parent.reset(node.index,instance.first())
 
-    def instantiate_generic_with_type_map(self, node: Node, type_map):
-        for i in node.sub_nodes:
-            self.instantiate_generic_with_type_map(i, type_map)
+    def instantiate_generic_with_type_map(self, node: Node, type_map) -> Node:
+        for i in range(0, len(node)):
+            node.sub_nodes[i] = self.instantiate_generic_with_type_map(node.sub_nodes[i], type_map)
         if node.type() == 'PrimitiveType':
-            parent = node.parent
             ty = node.tok.tok
             if ty in type_map:
-                parent.reset(node.index, type_map[ty])
+                node = type_map[ty].copy()
         if node.type() == 'Generic':
             replace = True
             for i in range(0, len(node.type_list)):
@@ -1055,6 +1077,7 @@ class CodeGen(Visitor):
                     node.type_list[i] = type_map[sign]
                 else:
                     replace = False
+            node.link()
             if replace:  # replace generic with decorated name or primitive type
                 node.accept(self)
                 self.pop_temp()
@@ -1063,15 +1086,12 @@ class CodeGen(Visitor):
                 n = node.first().tok.tok
                 decorated_name = self.generic_decorate(n, node.type_list)
                 if node.first().type() == 'PrimitiveType':
-                    parent = node.parent
-                    parent.reset(node.index, PrimitiveType.make_primitive(decorated_name))
+                    node = PrimitiveType.make_primitive(decorated_name)
                 elif node.first().type() == 'Identifier':
-                    parent = node.parent
-                    parent.reset(node.index, Identifier.make_identifier(decorated_name))
+                    node = Identifier.make_identifier(decorated_name)
                 elif node.first().type() == 'Implementation':
-                    parent = node.parent
-                    parent.reset(node.index, node.first())
-                    parent.sub_nodes[node.index].sub_nodes[0].tok.tok = decorated_name
+                    node.sub_nodes[0].tok.tok = decorated_name
+        return node
 
     def visit_type_inference(self, node):
         decl = node.first()
