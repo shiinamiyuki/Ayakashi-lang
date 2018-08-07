@@ -2,7 +2,7 @@ from node import *
 from visitor import Visitor
 from typing import Dict, List, Optional, Tuple
 from copy import deepcopy
-
+import parse
 
 class Buffer:
     def __init__(self):
@@ -516,8 +516,8 @@ class CodeGen(Visitor):
                     break
                 if not self.is_equal_type(arg[i + 1], ty_list[i]):
                     self.error('\nincompatible type at {2}th argument:\n\t{0}\nand\n\t{1}'.format(arg[i + 1]
-                                                                            , ty_list[i],
-                                                                            i))
+                                                                                                  , ty_list[i],
+                                                                                                  i))
         except IndexError:
             self.error('{0} arguments expected, {1} provided'.format(len(arg) - 1, len(ty_list)))
         self.push_type(f.second())
@@ -596,25 +596,15 @@ class CodeGen(Visitor):
         if g.type() == 'PrimitiveType':
             return [(g, ty)]
         if g.type() == 'Generic':
-            s1 = self.generic_decorate(g.first().signature(), g.real_type_list())
-            s2 = ty.signature()
-
-            def match(s1: str, s2: str) -> List[Tuple[str, str]]:
-                r1 = [x for x in s1.split('_GG_') if x]
-                r2 = [x for x in s2.split('_GG_') if x]
-                if len(r1) != len(r2):
-                    self.error('mismatch')
-                result = []
-                for i in range(0, len(r1)):
-                    if r1[i] != r2[i]:
-                        result.append((r1[i], r2[i]))
-                return result
-
-            r = match(s1, s2)
+            if ty.type() != 'Generic':
+                self.error('\nincompatible generic argument:\n\t{0}\nand\n\t{1}'.format(g,ty))
+            a = len(g.real_type_list())
+            b = len(ty.real_type_list())
+            if a != b:
+                self.error('\nincompatible generic argument:\n\t{0}\nand\n\t{1}'.format(g, ty))
             result = []
-            for i in r:
-                result.append((PrimitiveType.make_primitive(i[0]),
-                               PrimitiveType.make_primitive(i[1])))
+            for i in range(0,a):
+                result.append((g.real_type_list()[i],ty.real_type_list()[i]))
             return result
         elif g.type() == 'RefType' or g.type() == 'ArrayType' or g.type() == 'PointerType':
             if ty.type() != g.type():
@@ -675,7 +665,7 @@ class CodeGen(Visitor):
                 if arg[i].signature() == '...':
                     break
                 if not self.is_equal_type(arg[i], ty[i]):
-                    self.error('\nincompatible type at {2}th argument:\n\t{0}\nand\n\t{1}'.format(arg[i], ty[i],i+1))
+                    self.error('\nincompatible type at {2}th argument:\n\t{0}\nand\n\t{1}'.format(arg[i], ty[i], i + 1))
         except IndexError:
             self.error('{0} arguments expected, {1} provided'.format(len(arg), len(ty)))
         self.push_type(func.second())
@@ -1101,10 +1091,9 @@ class CodeGen(Visitor):
             if self.get_generic_impl_struct_name(i) == name:
                 self.gen_generic_impl(i, type_list)
 
-    def generic_decorate(self, name: str, type_list: List[Type]) -> str:
-        s = ''
-        # assert '_GG_' not in name
-        s += name + '_GG_'
+    @staticmethod
+    def generic_decorate(name: str, type_list: List[Type]) -> str:
+        s = name + '_GG_'
         for i in type_list:
             s += i.signature() + '_GG_'
         return s

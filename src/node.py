@@ -672,6 +672,15 @@ class Generic(Node):
     def is_arithmetic(self):
         return False
 
+    def __str__(self):
+        s = self.first().__str__() + '<'
+        for i in self.type_list:
+            s += i.__str__() + ' ,'
+        if s.endswith(' ,'):
+            s = s[:-2]
+        s += '>'
+        return s
+
     def __eq__(self, other):
         return self.signature() == other.signature()
 

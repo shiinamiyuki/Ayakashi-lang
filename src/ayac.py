@@ -4,19 +4,11 @@ import sys
 
 def test():
     s = '''
-import {
-    // C interop
-    cheader "stdio.h"
-    cheader "malloc.h"
-    cdef printf:([]char,...)->int
-    cdef malloc:(int)->*void
-    cdef free:(...)->void
-}
-fn foo<T>(x:T,y:T)->T{
-    return x + y
+#include "example.aya"
+fn bar<T>(x:Vector<T>)->void{
 }
 fn main()->int{
-    foo<int>(1,2.0 as int)
+    bar(make_vec< Vector<Vector<int>>>())
 }
     '''
     compiler = compile.Compiler()
