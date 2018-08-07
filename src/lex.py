@@ -29,6 +29,7 @@ class Lexer:
         self.col = 1
         self.line_comment = re.compile('//.+')
         self.token_stream = []
+        self.pp = re.compile('(#.+)+')
         self.src = src  # type : str
         self.number = re.compile('[0-9]+(\.[0-9]+)*f*')
         self.match = None
@@ -106,6 +107,11 @@ class Lexer:
         match = self.line_comment.match(self.src)
         if match:
             self.advance(match.span()[1])
+        match = self.pp.match(self.src)
+        if match:
+            self.advance(match.span()[1])
+            self.line = 1
+            self.col = 1
 
     def skip_space(self):
         try:
