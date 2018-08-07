@@ -66,7 +66,6 @@ class Compiler:
             file = open(self.filename + '.c', 'w')
             file.write(gen.produced_source)
             file.close()
-            raise e
 
     def call_as(self):
         cmd = (r'''gcc -o {0}.exe {0}.s''' + \

@@ -4,6 +4,7 @@ from abc import abstractmethod
 from typing import List
 from copy import deepcopy
 
+
 class Node:
     def __init__(self):
         self.tok = nil_token  # type: Token
@@ -383,6 +384,9 @@ class PrimitiveType(Type):
     def is_real(self):
         return self.is_double() or self.is_float()
 
+    def __str__(self):
+        return self.tok.tok
+
     def __eq__0(self, other):
         if self.signature() == other.signature():
             return True
@@ -410,6 +414,9 @@ class ArrayType(Type):
         return 'a{0}{1}'.format(self.first().signature(),
                                 self.size if self.size >= 0 else 'u')
 
+    def __str__(self):
+        return '[{1}]{0}'.format(self.first(),self.size if self.size >= 0 else '')
+
     def is_array(self):
         return True
 
@@ -430,6 +437,8 @@ class PointerType(Type):
     def is_pointer(self):
         return True
 
+    def __str__(self):
+        return '*{0}'.format(self.first())
 
 class RefType(Type):
     def __init__(self):
@@ -443,6 +452,9 @@ class RefType(Type):
 
     def signature(self):
         return 'r{0}'.format(self.first().signature())
+
+    def __str__(self):
+        return '&{0}'.format(self.first())
 
     def is_reference(self):
         return True
@@ -461,6 +473,8 @@ class FuncType(Type):
     def signature(self):
         return 'f{0}{1}'.format(self.first().signature(), self.second().signature())
 
+    def __str__(self):
+        return '{0}->{1}'.format(self.first(),self.second())
 
 class FuncTypeArg(Type):
     def __init__(self):
@@ -479,6 +493,14 @@ class FuncTypeArg(Type):
         s += 'Z'
         return s
 
+    def __str__(self):
+        s = '('
+        for i in self.sub_nodes:
+            s += str(i) + ' ,'
+        if s.endswith(' ,'):
+            s = s[:-2]
+        s += ')'
+        return s
 
 class Chunk(Node):
     def __init__(self):
@@ -632,7 +654,7 @@ class Generic(Node):
             n.type_list.append(i.copy())
         return n
 
-    def signature(self)->str:
+    def signature(self) -> str:
         s = self.first().signature() + '_GG_'
         for i in self.type_list:
             s += i.signature() + '_GG_'
@@ -652,6 +674,7 @@ class Generic(Node):
 
     def __eq__(self, other):
         return self.signature() == other.signature()
+
 
 class TypeInference(Node):
     def __init__(self):

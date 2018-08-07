@@ -266,7 +266,7 @@ class CodeGen(Visitor):
         if self.check_binary_expr_type_real_auto_promote(op, ty1, ty2):
             return
         if not self.is_equal_type(ty1, ty2):
-            self.error('incompatible type\n {0} and {1}\n'.format(ty1, ty2))
+            self.error('\nincompatible type:\n\t{0}\nand\n\t{1}\n'.format(ty1, ty2))
 
     def check_index_expr_type(self):
         ty2 = self.pop_type()
@@ -515,7 +515,9 @@ class CodeGen(Visitor):
                 if arg[i + 1].signature() == '...':
                     break
                 if not self.is_equal_type(arg[i + 1], ty_list[i]):
-                    self.error('\nincompatible type\n {0}\n and {1}'.format(arg, ty_list))
+                    self.error('\nincompatible type at {2}th argument:\n\t{0}\nand\n\t{1}'.format(arg[i + 1]
+                                                                            , ty_list[i],
+                                                                            i))
         except IndexError:
             self.error('{0} arguments expected, {1} provided'.format(len(arg) - 1, len(ty_list)))
         self.push_type(f.second())
@@ -548,11 +550,13 @@ class CodeGen(Visitor):
             return
         node.second().accept(self)
         # node.first().accept(self)
+        self.pop_temp()
+        s = self.temp.buffer
+        self.clear_temp()
         self.check_arg_and_visit_caller(node.first(), node.second())
-        s = ''
-        for i in range(0, 2):
-            self.pop_temp()
-            s = s + self.temp.buffer
+        # s = ''
+        self.pop_temp()
+        s = self.temp.buffer + s
         self.clear_temp()
         self.write_and_push(s)
 
@@ -626,7 +630,10 @@ class CodeGen(Visitor):
             r = self.reduce(arg[i], ty[i])
             for a, b in r:
                 if a.signature() in m and m[a.signature()] != b.signature():
-                    self.error('conflicting generic argument {0}'.format(a.signature()))
+                    self.error(('conflicting generic argument {0} with \n\t' + \
+                                '{1}\nand\n\t{2}').format(a.signature(),
+                                                          m[a.signature()],
+                                                          b))
                 m[a.signature()] = b.signature()
         if len(m) != len(g):
             self.error('{0} arguments expected but found{1}'.format(len(g), len(m)))
@@ -652,7 +659,6 @@ class CodeGen(Visitor):
                 generic.accept(self)
                 func_type = self.pop_type()
                 self.push_type(func_type.second())
-
             else:
                 caller.accept(self)
                 func_type = self.pop_type()
@@ -669,7 +675,7 @@ class CodeGen(Visitor):
                 if arg[i].signature() == '...':
                     break
                 if not self.is_equal_type(arg[i], ty[i]):
-                    self.error('\nincompatible type\n {0}\n and {1}'.format(arg, ty))
+                    self.error('\nincompatible type at {2}th argument:\n\t{0}\nand\n\t{1}'.format(arg[i], ty[i],i+1))
         except IndexError:
             self.error('{0} arguments expected, {1} provided'.format(len(arg), len(ty)))
         self.push_type(func.second())
@@ -904,7 +910,7 @@ class CodeGen(Visitor):
         self.write_and_push(s)
         # print(struct.methods)
 
-    def visit_method_def(self, node:MethodDef):
+    def visit_method_def(self, node: MethodDef):
         parent = node.parent
         struct_name = node.class_name
         if parent.type() == 'Implementation':
@@ -1015,9 +1021,8 @@ class CodeGen(Visitor):
                 decorated_name = self.generic_decorate(func_name, node.real_type_list())
                 self.gen_func_def(f, decorated_name)
 
-    def gen_generic_impl(self, node:Generic, type_list):
-        self.instantiate_generic(node,type_list)
-
+    def gen_generic_impl(self, node: Generic, type_list):
+        self.instantiate_generic(node, type_list)
 
     def process_generic_impl(self, node):
         if not self.is_instantialized(node):
@@ -1027,7 +1032,7 @@ class CodeGen(Visitor):
             f = node.first()
             func_name = f.tok.tok
             self.update_pos(f.tok)
-            decorated_name = self.generic_decorate(func_name,  node.real_type_list())
+            decorated_name = self.generic_decorate(func_name, node.real_type_list())
             self.gen_impl(node.first(), decorated_name)
 
     def visit_generic(self, node: Generic):
@@ -1090,8 +1095,6 @@ class CodeGen(Visitor):
             self.write_and_push(decorated_name)
         else:
             self.write_and_push('')
-
-
 
     def instantiate_generic_impl(self, name: str, type_list: List[Type]):
         for i in self.generic_impls:
