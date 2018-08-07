@@ -556,6 +556,7 @@ class MethodDef(Node):
         self.sub_nodes = f.sub_nodes
         self.tok = f.tok
         self.precedence = f.precedence
+        self.class_name = ''
 
     def type(self):
         return 'MethodDef'
@@ -631,6 +632,26 @@ class Generic(Node):
             n.type_list.append(i.copy())
         return n
 
+    def signature(self)->str:
+        s = self.first().signature() + '_GG_'
+        for i in self.type_list:
+            s += i.signature() + '_GG_'
+        return s
+
+    def is_array(self):
+        return False
+
+    def is_pointer(self):
+        return False
+
+    def is_reference(self):
+        return False
+
+    def is_arithmetic(self):
+        return False
+
+    def __eq__(self, other):
+        return self.signature() == other.signature()
 
 class TypeInference(Node):
     def __init__(self):

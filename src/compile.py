@@ -10,6 +10,13 @@ class Compiler:
     def __init__(self):
         self.filename = ''
 
+    def call_pp(self, filename:str)->str:
+        cmd = (r'D:\mingw-w64\x86_64-8.1.0-posix-seh-rt_v6-rev0\mingw64\bin\gcc -E {0}.aya ' + \
+            '-o {0}.i').format(filename)
+        print(cmd)
+        os.system(cmd)
+        return '{0}.i'.format(filename)
+
     def compilex86_64(self, s: str, filename='out'):
         try:
             self.filename = filename
@@ -38,6 +45,9 @@ class Compiler:
             p = Parser(lex)
             ast = p.parse()
             ast.link()
+            file = open('ast.txt','w')
+            file.write(str(ast))
+            file.close()
             gen = CodeGen()
             gen.filename = filename + '.aya'
             ast.accept(gen)
@@ -50,15 +60,22 @@ class Compiler:
             self.call_cc()
         except RuntimeError as e:
             print(e, file=sys.stderr)
+            gen.pop_temp()
+            gen.write_typedefs_to_source()
+            gen.write_temp_to_source_and_destroy_temp()
+            file = open(self.filename + '.c', 'w')
+            file.write(gen.produced_source)
+            file.close()
+            raise e
 
     def call_as(self):
-        cmd = (r'''D:\mingw-w64\x86_64-8.1.0-posix-seh-rt_v6-rev0\mingw64\bin\gcc -o {0}.exe {0}.s''' + \
+        cmd = (r'''gcc -o {0}.exe {0}.s''' + \
                ''r' -lglfw3 -lgdi32 -lopengl32''').format(self.filename)
-        print('Running C compiler: ' + cmd)
+        print('Running assembler: ' + cmd)
         os.system(cmd)
 
     def call_cc(self):
-        cmd = (r'''D:\mingw-w64\x86_64-8.1.0-posix-seh-rt_v6-rev0\mingw64\bin\gcc -o {0}.exe {0}.c''' + \
+        cmd = (r'''gcc -o {0}.exe {0}.c''' + \
                ''r' -lglfw3 -lgdi32 -lopengl32''').format(self.filename)
         print('Running C compiler: ' + cmd)
         os.system(cmd)

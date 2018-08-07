@@ -275,12 +275,17 @@ class Parser:
                 self.next()
             t = self.parse_type()
             type_list.append(t)
-            if t.is_primitive():
-                self.add_type(t.signature())
+            self.add_type(t.signature())
             if self.has('>'):
+                break
+            if self.has('>>'):
+                tok = self.peek()
+                self.token_stream[self.idx + 1] = Token('>',tok.type,tok.line,tok.col)
+                self.token_stream.insert(self.idx + 1, Token('>',tok.type,tok.line,tok.col+1))
                 break
             self.expect(',')
         self.expect('>')
+        # print(type_list)
         return Generic(type_list)
 
     def is_next_token_type(self, i=1):

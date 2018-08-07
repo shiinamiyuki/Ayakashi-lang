@@ -78,6 +78,7 @@ class CodeGen(Visitor):
         self.temp_stack = []
         self.temp = Buffer()
         self.typedefs = includes
+        self.types = []  # type :List[str
         self.type = None  # type : Type
         self.type_stack = []  # type:List[Type]
         self.symbol_table = []  # type: List[Dict[str,VarInfo]]
@@ -87,6 +88,15 @@ class CodeGen(Visitor):
         self.line = 0
         self.col = 0
         self.filename = '#memory#'
+        for i in ['int', 'float', 'void', 'double', 'char']:
+            self.add_type(i)
+
+    def add_type(self, sign: str):
+        if sign not in self.types:
+            self.types.append(sign)
+
+    def has_type(self, sign: str):
+        return sign in self.types
 
     def update_pos(self, tok: Token):
         self.line = tok.line
@@ -135,6 +145,8 @@ class CodeGen(Visitor):
         self.symbol_table.append(dict())
 
     def pop_lexical_scope(self):
+        if len(self.symbol_table) <= 1:
+            raise RuntimeError('Internal Error')
         self.symbol_table.pop()
 
     def write_typedef(self, s: str):
@@ -234,7 +246,7 @@ class CodeGen(Visitor):
             self.error("don't do that")
         struct = self.retrieve_symbol(struct_type.signature())
         if not struct:
-            print(struct_type)
+            # (struct_type)
             self.error('www')
         field = struct.retrieve(field_name)
         if not field:
@@ -601,10 +613,10 @@ class CodeGen(Visitor):
                                PrimitiveType.make_primitive(i[1])))
             return result
         elif g.type() == 'RefType' or g.type() == 'ArrayType' or g.type() == 'PointerType':
-            if ty.type()!=g.type():
-                self.error('incompcatible type\n {0}\n {1}'.format(g,ty))
+            if ty.type() != g.type():
+                self.error('incompcatible type\n {0}\n {1}'.format(g, ty))
             else:
-                return self.reduce(g.first(),ty.first())
+                return self.reduce(g.first(), ty.first())
         else:
             self.error(g)
 
@@ -718,39 +730,47 @@ class CodeGen(Visitor):
             self.clear_temp()
         self.clear_temp()
         self.write_and_push(s)
-        self.pop_lexical_scope()
 
-    def visit_struct(self, node):
+    def gen_struct(self, node, decorated_name=''):
         s = node.tok.tok
+        if decorated_name != '':
+            s = decorated_name
+        self.add_type(s)
         struct = VarInfo(s, PrimitiveType.make_primitive(s))
         self.write_typedef('struct ' + s + ';\ntypedef struct ' + s + ' ' + s + ";\n")
         s = 'struct ' + s + '{\n'
         # hack here, this is rubbish code. don't do that again
-        temp = self.symbol_table
-        self.symbol_table = [dict()]
         for i in node.sub_nodes:
             field_name = i.tok.tok
             struct.add_field(VarInfo(field_name, i.first()))
+            level = len(self.symbol_table) - 1
             i.accept(self)
+            del self.symbol_table[level][field_name]
             self.pop_temp()
             s += self.temp.buffer + ';\n'
             self.clear_temp()
         s += '};\n'
         self.clear_temp()
         self.write_and_push(s)
-        self.symbol_table = temp
         self.add_global_symbol_directly(struct)
 
-    def visit_func_def(self, node: FuncDef):
+    def visit_struct(self, node):
+        self.gen_struct(node)
+
+    def gen_func_def(self, node: FuncDef, decorated_name=''):
         temp = self.type_stack
         self.type_stack = []
-        self.add_global_symbol(node.tok.tok, node.call_signature())
+        func_name = node.tok.tok
+        self.update_pos(node.tok)
+        if decorated_name != '':
+            func_name = decorated_name
+        self.add_global_symbol(func_name, node.call_signature())
         self.push_lexical_scope()
         node.second().accept(self)
         self.pop_temp()
         s = self.temp.buffer + ' '
         self.clear_temp()
-        s += node.tok.tok
+        s += func_name
         node.first().accept(self)
         self.pop_temp()
         s += self.temp.buffer
@@ -765,6 +785,9 @@ class CodeGen(Visitor):
         self.pop_lexical_scope()
         self.type_stack = temp
 
+    def visit_func_def(self, node: FuncDef):
+        self.gen_func_def(node)
+
     def visit_func_def_arg(self, node):
         self.visit_arg_template(node)
 
@@ -776,6 +799,7 @@ class CodeGen(Visitor):
         node.first().accept(self)
         self.pop_temp()
         sign = node.signature()
+        self.add_type(sign)
         if size >= 0:
             s = 'typedef ' + self.temp.buffer \
                 + ' ' + sign + ('[{0}]'.format(size)) + ';\n'
@@ -789,6 +813,7 @@ class CodeGen(Visitor):
         node.first().accept(self)
         self.pop_temp()
         sign = node.signature()
+        self.add_type(sign)
         s = 'typedef ' + self.temp.buffer + ' * ' + sign + ';\n'
         self.clear_temp()
         self.write_typedef(s)
@@ -798,6 +823,7 @@ class CodeGen(Visitor):
         node.first().accept(self)
         self.pop_temp()
         sign = node.signature()
+        self.add_type(sign)
         s = 'typedef ' + self.temp.buffer + ' * ' + sign + ';\n'
         self.clear_temp()
         self.write_typedef(s)
@@ -805,6 +831,7 @@ class CodeGen(Visitor):
 
     def visit_func_type(self, node: FuncType):
         signature = node.signature()
+        self.add_type(signature)
         ret_type = node.second()
         arg = node.first()
         ret_type.accept(self)
@@ -849,19 +876,26 @@ class CodeGen(Visitor):
         var = node.tok.tok
         decl = node.first()
         ty = decl.first()
-        self.add_symbol(var, ty)
+        self.add_global_symbol(var, ty)
 
     def visit_c_type(self, node):
         self.add_symbol(node.tok.tok, PrimitiveType.make_primitive(node.tok.tok))
 
     def visit_implementation(self, node):
+        self.gen_impl(node)
+
+    def gen_impl(self, node, decorated_name=''):
         #  print(node)
         struct_name = node.tok.tok
+        self.update_pos(node.tok)
+        if decorated_name != '':
+            struct_name = decorated_name
         struct = self.retrieve_symbol(struct_name)
         node.link()
         s = ''
         for i in node.sub_nodes:
             struct.add_method(VarInfo(i.tok.tok, i.call_signature()))
+            i.class_name = struct_name
             i.accept(self)
             self.pop_temp()
             s += self.temp.buffer
@@ -870,9 +904,9 @@ class CodeGen(Visitor):
         self.write_and_push(s)
         # print(struct.methods)
 
-    def visit_method_def(self, node):
+    def visit_method_def(self, node:MethodDef):
         parent = node.parent
-        struct_name = parent.tok.tok
+        struct_name = node.class_name
         if parent.type() == 'Implementation':
             func_name = struct_name + '_' + node.tok.tok
         else:
@@ -951,18 +985,66 @@ class CodeGen(Visitor):
     def add_generic_impl(self, node: Generic):
         self.generic_impls.append(node)
 
-    def visit_generic(self, node: Generic):
-        f = node.first()
-        if f.type() in ['FuncDef', 'Struct']:
+    def is_instantialized(self, node: Generic):
+        flag = True
+        for i in node.real_type_list():
+            if not self.is_good_type(i):
+                flag = False
+                break
+        return flag
+
+    def is_good_type(self, type: Node):
+        return self.has_type(type.signature())
+
+    def gen_generic_func_and_struct(self, node: Generic):
+        if not self.is_instantialized(node):
+            f = node.first()
             self.add_generic(f.tok.tok, node)
             self.clear_temp()
             self.write_and_push('')
-        elif f.type() == 'Implementation':
+        else:
+            f = node.first()
+            if f.type() == 'Struct':
+                func_name = f.tok.tok
+                self.update_pos(f.tok)
+                decorated_name = self.generic_decorate(func_name, node.real_type_list())
+                self.gen_struct(f, decorated_name)
+            elif f.type() == 'FuncDef':
+                func_name = f.tok.tok
+                self.update_pos(f.tok)
+                decorated_name = self.generic_decorate(func_name, node.real_type_list())
+                self.gen_func_def(f, decorated_name)
+
+    def gen_generic_impl(self, node:Generic, type_list):
+        self.instantiate_generic(node,type_list)
+
+
+    def process_generic_impl(self, node):
+        if not self.is_instantialized(node):
             self.add_generic_impl(node)
             self.write_and_push('')
+        else:
+            f = node.first()
+            func_name = f.tok.tok
+            self.update_pos(f.tok)
+            decorated_name = self.generic_decorate(func_name,  node.real_type_list())
+            self.gen_impl(node.first(), decorated_name)
+
+    def visit_generic(self, node: Generic):
+        f = node.first()
+        for i in node.real_type_list():
+            if i.type() == 'Generic':
+                i.accept(self)
+                self.pop_temp()
+                self.clear_temp()
+        if f.type() in ['FuncDef', 'Struct']:
+            self.gen_generic_func_and_struct(node)
+        elif f.type() == 'Implementation':
+            self.process_generic_impl(node)
         elif f.type() == 'Identifier':
             if node.parent.type() == 'Call':
                 func_name = f.tok.tok
+                self.update_pos(f.tok)
                 decorated_name = self.generic_decorate(func_name, node.real_type_list())
                 # print(decorated_name)
                 f = self.retrieve_symbol(decorated_name)
@@ -971,6 +1053,7 @@ class CodeGen(Visitor):
                     generic.parent = None
                     assert generic is not self.generics[func_name]
                     temp = self.type_stack
+                    generic.link()
                     self.type_stack = []
                     if not generic:
                         self.error('attempt to call a non generic object')
@@ -1003,18 +1086,17 @@ class CodeGen(Visitor):
                 self.write_typedef(self.temp.buffer)
                 self.clear_temp()
                 f = self.retrieve_symbol(decorated_name)
-            parent = node.parent
-            parent.reset(node.index, PrimitiveType.make_primitive(decorated_name))
             self.clear_temp()
             self.write_and_push(decorated_name)
         else:
             self.write_and_push('')
 
+
+
     def instantiate_generic_impl(self, name: str, type_list: List[Type]):
         for i in self.generic_impls:
             if self.get_generic_impl_struct_name(i) == name:
-                k = (i).copy()
-                self.instantiate_generic(k, type_list)
+                self.gen_generic_impl(i, type_list)
 
     def generic_decorate(self, name: str, type_list: List[Type]) -> str:
         s = ''
@@ -1036,7 +1118,7 @@ class CodeGen(Visitor):
         instance = node.copy()
 
         n0 = instance.first().tok.tok
-        g0 = self.generics[n0].copy() # self.generics is been modified by unknown source
+        g0 = self.generics[n0].copy()  # self.generics is been modified by unknown source
         assert instance.first() is not self.generics[n0].first()
         idx = instance.index
         p = instance.parent
@@ -1049,18 +1131,10 @@ class CodeGen(Visitor):
         if instance.type() != "Struct":
             assert instance.first() is not self.generics[n0].first()
             n = self.generic_decorate(n0, type_list)
-            # print(n,self.retrieve_symbol(n0))
             t = instance.first().tok
 
-            if not self.retrieve_symbol(n0):
-                instance.sub_nodes[0].tok = Token(n, t.type,
-                                                  t.line, t.col)
-
         # print(instance)
-        instance.first().accept(self)
-        # instance.sub_nodes[0].tok.tok = temp  # this is important, don't ask me why
-        # parent = node.parent
-        # parent.reset(node.index,instance.first())
+        instance.accept(self)
 
     def instantiate_generic_with_type_map(self, node: Node, type_map) -> Node:
         for i in range(0, len(node)):
@@ -1078,19 +1152,6 @@ class CodeGen(Visitor):
                 else:
                     replace = False
             node.link()
-            if replace:  # replace generic with decorated name or primitive type
-                node.accept(self)
-                self.pop_temp()
-                self.clear_temp()
-                n = ''
-                n = node.first().tok.tok
-                decorated_name = self.generic_decorate(n, node.type_list)
-                if node.first().type() == 'PrimitiveType':
-                    node = PrimitiveType.make_primitive(decorated_name)
-                elif node.first().type() == 'Identifier':
-                    node = Identifier.make_identifier(decorated_name)
-                elif node.first().type() == 'Implementation':
-                    node.sub_nodes[0].tok.tok = decorated_name
         return node
 
     def visit_type_inference(self, node):
