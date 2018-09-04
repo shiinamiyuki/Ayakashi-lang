@@ -5,10 +5,13 @@ import sys
 def test():
     s = '''
 #include "example.aya"
-fn bar<T>(x:Vector<T>)->void{
+type A{
+
 }
+
+
 fn main()->int{
-    bar(make_vec< Vector<Vector<int>>>())
+    return 0;
 }
     '''
     compiler = compile.Compiler()

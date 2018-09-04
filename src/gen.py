@@ -4,6 +4,7 @@ from typing import Dict, List, Optional, Tuple
 from copy import deepcopy
 import parse
 
+
 class Buffer:
     def __init__(self):
         self.spaces = 0
@@ -87,6 +88,7 @@ class CodeGen(Visitor):
         self.generic_impls = []  # type: List[Generic]
         self.line = 0
         self.col = 0
+        self.showCastWarning = True
         self.filename = '#memory#'
         for i in ['int', 'float', 'void', 'double', 'char']:
             self.add_type(i)
@@ -103,9 +105,15 @@ class CodeGen(Visitor):
         self.col = tok.col
 
     def error(self, msg: str):
-        raise RuntimeError('{0}:{1}:{2} error: {3}'.format(
+        raise RuntimeError('\033[4;33;40m{0}:{1}:{2}\033[0m \033[1;31;40merror: {3}\033[0m'.format(
             self.filename, self.line, self.col, msg
         ))
+
+    def warning(self, msg: str):
+        s = ('\033[4;33;40m{0}:{1}:{2}\033[0m \033[1;33;40mwarning: {3}\033[0m'.format(
+            self.filename, self.line, self.col, msg
+        ))
+        print(s)
 
     def retrieve_generic(self, s: str) -> Optional[Generic]:
         if s in self.generics:
@@ -204,7 +212,14 @@ class CodeGen(Visitor):
         self.push_type(ty)
 
     def is_equal_type(self, ty1: Type, ty2: Type):
-        return ty1 == ty2
+        if ty1 == ty2:
+            return True
+        if ty1.is_pointer() or ty1.is_reference() or ty1.is_array() or ty1.is_null():
+            if ty2.is_pointer() or ty2.is_reference() or ty2.is_array() or ty2.is_null():
+                if ty1.is_void_ptr() or ty2.is_void_ptr():
+                    return True
+
+        return False
 
     def check_binary_expr_type_int_only_op(self, op, ty1: Type, ty2: Type):
         if op not in [x for x in '& ^ | %' if x]:
@@ -298,7 +313,9 @@ class CodeGen(Visitor):
     def visit_identifier(self, node):
         self.write_and_push(node.tok.tok)
         self.update_pos(node.tok)
-        if node.tok.tok in ['null', 'false', 'true']:
+        if node.tok.tok == 'null':
+            self.push_type(PrimitiveType.make_primitive('null'))
+        elif node.tok.tok in ['false', 'true']:
             self.push_type(PrimitiveType.make_primitive('int'))
         elif node.tok.tok == 'none':
             self.push_type(PrimitiveType.make_primitive('void'))
@@ -472,7 +489,7 @@ class CodeGen(Visitor):
             if ty.is_pointer() or ty.is_reference():
                 self.push_type(ty.first())
             else:
-                self.error("could not dereference\n {0}".format(ty))
+                self.error("could not dereference: {0}".format(ty))
         elif op == '-':
             if ty.is_arithmetic():
                 self.push_type(PrimitiveType.make_primitive('int'))
@@ -597,14 +614,14 @@ class CodeGen(Visitor):
             return [(g, ty)]
         if g.type() == 'Generic':
             if ty.type() != 'Generic':
-                self.error('\nincompatible generic argument:\n\t{0}\nand\n\t{1}'.format(g,ty))
+                self.error('\nincompatible generic argument:\n\t{0}\nand\n\t{1}'.format(g, ty))
             a = len(g.real_type_list())
             b = len(ty.real_type_list())
             if a != b:
                 self.error('\nincompatible generic argument:\n\t{0}\nand\n\t{1}'.format(g, ty))
             result = []
-            for i in range(0,a):
-                result.append((g.real_type_list()[i],ty.real_type_list()[i]))
+            for i in range(0, a):
+                result.append((g.real_type_list()[i], ty.real_type_list()[i]))
             return result
         elif g.type() == 'RefType' or g.type() == 'ArrayType' or g.type() == 'PointerType':
             if ty.type() != g.type():
@@ -620,13 +637,22 @@ class CodeGen(Visitor):
             r = self.reduce(arg[i], ty[i])
             for a, b in r:
                 if a.signature() in m and m[a.signature()] != b.signature():
-                    self.error(('conflicting generic argument {0} with \n\t' + \
+                    self.error(('conflicting generic argument {0} with \n\t' +
                                 '{1}\nand\n\t{2}').format(a.signature(),
                                                           m[a.signature()],
                                                           b))
                 m[a.signature()] = b.signature()
+        x = []
+        for i in m:
+            if self.has_type(i):
+                x.append(i)
+        for i in x:
+            del m[i]
         if len(m) != len(g):
-            self.error('{0} arguments expected but found{1}'.format(len(g), len(m)))
+            self.error('{0} arguments expected but found {1} with:\n\t{2}\nand\n\t{3}'.format(
+                len(g),
+                len(m),
+                g, m))
         result = []
         for i in g:
             result.append(PrimitiveType.make_primitive(m[i.signature()]))
@@ -673,10 +699,22 @@ class CodeGen(Visitor):
     def visit_call_arg(self, node: CallArg):
         self.visit_arg_template(node)
 
+    def check_cast_type(self, ty1: Type, ty2: Type):
+        if ty1 == ty2:
+            return
+        if ty1.is_arithmetic() and ty2.is_arithmetic:
+            return
+        if self.is_equal_type(ty1, ty2) and self.showCastWarning:
+            self.warning('\nconversion from\n\t{0}\nto\n\t{1}'.format(ty1, ty2))
+        else:
+            self.error('\nincompatible type during cast:\n\t{0}\nand\n\t{1}'.format(ty1, ty2))
+
     def visit_cast_expr(self, node):
         node.first().accept(self)
-        self.pop_type()
-        self.push_type(node.second())
+        ty1 = self.pop_type()
+        ty2 = node.second()
+        self.push_type(ty2)
+        self.check_cast_type(ty1, ty2)
         self.pop_temp()
         s = self.temp.buffer
         self.clear_temp()
@@ -700,10 +738,11 @@ class CodeGen(Visitor):
 
     def visit_return(self, node):
         s = 'return '
-        node.first().accept(self)
-        self.pop_temp()
-        s += self.temp.buffer
-        self.clear_temp()
+        if len(node) > 0:
+            node.first().accept(self)
+            self.pop_temp()
+            s += self.temp.buffer
+            self.clear_temp()
         self.write_and_push(s)
 
     def visit_block(self, block: Block):
@@ -1057,6 +1096,9 @@ class CodeGen(Visitor):
                     self.write_typedef(self.temp.buffer)
                     self.clear_temp()
                     f = self.retrieve_symbol(decorated_name)
+                    if not f:
+                        self.update_pos(node.first().tok)
+                        self.error('failed to instantiate generic:\n\t{0}'.format(node))
                     self.type_stack = temp
                 self.clear_temp()
                 self.write_and_push(decorated_name)

@@ -144,6 +144,9 @@ class Identifier(Node):
     def accept(self, visitor):
         visitor.visit_identifier(self)
 
+    def __str__(self):
+        return self.tok.tok
+
     @staticmethod
     def make_identifier(s):
         return Identifier(Token(s, 'identifier', 0, 0))
@@ -170,6 +173,17 @@ class Index(Node):
 
     def accept(self, visitor):
         visitor.visit_index(self)
+
+
+class Empty(Node):
+    def __init__(self):
+        super().__init__()
+
+    def type(self):
+        return 'Empty'
+
+    def accept(self, visitor):
+        pass
 
 
 class Call(Node):
@@ -343,6 +357,12 @@ class Type(Node):
     def is_primitive(self):
         return False
 
+    def is_null(self):
+        return False
+
+    def is_void_ptr(self):
+        return False
+
 
 class PrimitiveType(Type):
     def __init__(self, tok: Token, is_struct=False):
@@ -384,6 +404,9 @@ class PrimitiveType(Type):
     def is_real(self):
         return self.is_double() or self.is_float()
 
+    def is_null(self):
+        return self.tok.tok == 'null'
+
     def __str__(self):
         return self.tok.tok
 
@@ -394,6 +417,9 @@ class PrimitiveType(Type):
         ty2 = self.signature()
         if ty1.is_int() and ty2.is_int():
             pass
+
+    def is_void_ptr(self):
+        return self.tok.tok == 'null'
 
 
 class ArrayType(Type):
@@ -415,10 +441,13 @@ class ArrayType(Type):
                                 self.size if self.size >= 0 else 'u')
 
     def __str__(self):
-        return '[{1}]{0}'.format(self.first(),self.size if self.size >= 0 else '')
+        return '[{1}]{0}'.format(self.first(), self.size if self.size >= 0 else '')
 
     def is_array(self):
         return True
+
+    def is_void_ptr(self):
+        return self.first() == PrimitiveType.make_primitive('void')
 
 
 class PointerType(Type):
@@ -440,6 +469,10 @@ class PointerType(Type):
     def __str__(self):
         return '*{0}'.format(self.first())
 
+    def is_void_ptr(self):
+        return self.first() == PrimitiveType.make_primitive('void')
+
+
 class RefType(Type):
     def __init__(self):
         super().__init__()
@@ -459,6 +492,9 @@ class RefType(Type):
     def is_reference(self):
         return True
 
+    def is_void_ptr(self):
+        return self.first() == PrimitiveType.make_primitive('void')
+
 
 class FuncType(Type):
     def __init__(self):
@@ -474,7 +510,8 @@ class FuncType(Type):
         return 'f{0}{1}'.format(self.first().signature(), self.second().signature())
 
     def __str__(self):
-        return '{0}->{1}'.format(self.first(),self.second())
+        return '{0}->{1}'.format(self.first(), self.second())
+
 
 class FuncTypeArg(Type):
     def __init__(self):
@@ -501,6 +538,7 @@ class FuncTypeArg(Type):
             s = s[:-2]
         s += ')'
         return s
+
 
 class Chunk(Node):
     def __init__(self):
@@ -670,6 +708,9 @@ class Generic(Node):
         return False
 
     def is_arithmetic(self):
+        return False
+
+    def is_null(self):
         return False
 
     def __str__(self):

@@ -3,6 +3,7 @@ from gen import *
 import os
 import sys
 import genx86
+import time
 from copy import deepcopy
 
 
@@ -10,12 +11,10 @@ class Compiler:
     def __init__(self):
         self.filename = ''
 
-    def call_pp(self, filename:str)->str:
-        cmd = (r'D:\mingw-w64\x86_64-8.1.0-posix-seh-rt_v6-rev0\mingw64\bin\gcc -E {0}.aya ' + \
-            '-o {0}.i').format(filename)
-        print(cmd)
+    def call_pp(self):
+        cmd = r'gcc -E pp.c ' + \
+            '-o pp.i'
         os.system(cmd)
-        return '{0}.i'.format(filename)
 
     def compilex86_64(self, s: str, filename='out'):
         try:
@@ -38,8 +37,16 @@ class Compiler:
             print(e, file=sys.stderr)
 
     def compile(self, s: str, filename='out'):
+        gen = CodeGen()
         try:
             self.filename = filename
+            pp = open('pp.c','w')
+            pp.write(s)
+            pp.close()
+            self.call_pp()
+            time_start = time.time()
+            src = open('pp.i','r')
+            s = src.read()
             lex = Lexer(s)
             lex.parse()
             p = Parser(lex)
@@ -48,7 +55,7 @@ class Compiler:
             file = open('ast.txt','w')
             file.write(str(ast))
             file.close()
-            gen = CodeGen()
+
             gen.filename = filename + '.aya'
             ast.accept(gen)
             gen.pop_temp()
@@ -57,6 +64,9 @@ class Compiler:
             file = open(self.filename + '.c', 'w')
             file.write(gen.produced_source)
             file.close()
+            time_end = time.time() - time_start
+            print('c source generated in {0}s speed: {1} lines/sec'.format(time_end,
+                                                                           p.total_lines/time_end))
             self.call_cc()
         except RuntimeError as e:
             print(e, file=sys.stderr)

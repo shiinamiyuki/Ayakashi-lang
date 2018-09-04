@@ -25,6 +25,7 @@ nil_token = Token('', 'nil', 0, 0)
 
 class Lexer:
     def __init__(self, src: str):
+        self.total_lines = 0
         self.line = 1
         self.col = 1
         self.line_comment = re.compile('//.+')
@@ -43,6 +44,7 @@ class Lexer:
     def advance(self, i:int):
         while i > 0:
             if self.src[0] == '\n':
+                self.total_lines += 1
                 self.line += 1
                 self.col = 1
             elif self.src[0] == '\t':
@@ -110,13 +112,13 @@ class Lexer:
         match = self.pp.match(self.src)
         if match:
             self.advance(match.span()[1])
-            self.line = 1
+            self.line = 0
             self.col = 1
 
     def skip_space(self):
         try:
             self.skip_comment()
-            while self.src[0].isspace():
+            while self.src[0] in ['\t', ' ']:
                 # self.src = self.src[1:]
                 self.advance(1)
                 self.skip_comment()
@@ -129,7 +131,11 @@ class Lexer:
 
     def next(self):
         self.skip_space()
-        if self.has_number():
+        if self.src[0] in ['\n',';']:
+            self.token = self.src[0]
+            self.append_token('terminator')
+            self.advance(1)
+        elif self.has_number():
             self.append_token('number')
         elif self.has_identifier():
             self.append_token('identifier')

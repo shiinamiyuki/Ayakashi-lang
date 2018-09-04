@@ -11,6 +11,11 @@ class Parser:
         self.op_assoc = dict()
         self.init_op_precedence_and_assoc()
         self.types = [['int', 'float', 'double', 'char']]  # type: List[List[str]]
+        self.total_lines = lex.total_lines
+
+    def skip(self):
+        while self.peek().type == 'terminator' and self.peek().tok == '\n':
+            self.next()
 
     def push_type_scope(self):
         self.types.append([])
@@ -78,14 +83,17 @@ class Parser:
         self.idx += 1
 
     def expect(self, tok):
+        self.skip()
         if self.peek().tok != tok:
             self.error('{0} expected but have {1}'.format(tok, self.peek().tok))
         self.next()
 
     def has_next(self):
+        self.skip()
         return self.idx + 1 < len(self.token_stream)
 
     def has(self, tok):
+        self.skip()
         return self.peek().tok == tok
 
     def error(self, msg: str):
@@ -95,6 +103,7 @@ class Parser:
             self.cur().col))
 
     def parse_atom(self) -> Node:
+        self.skip()
         if self.peek().type == 'identifier':
             self.next()
             iden = Identifier(self.cur())
@@ -118,6 +127,7 @@ class Parser:
             self.error('illegal token {0}'.format(self.peek().tok))
 
     def parse_cast_expr(self) -> Node:
+        self.skip()
         result = self.parse_unary_expr()
         if self.has('as'):
             self.next()
@@ -128,6 +138,7 @@ class Parser:
         return result
 
     def parse_unary_expr(self) -> Node:
+        self.skip()
         if self.peek().tok in ['-', '*', '&', 'not', '!']:
             self.next()
             e = UnaryExpr(self.cur())
@@ -142,6 +153,7 @@ class Parser:
             return self.parse_postfix_expr()
 
     def parse_postfix_expr(self) -> Node:
+        self.skip()
         result = self.parse_atom()
         while self.has_next() and (self.has('[') or
                                    self.has('(') or
@@ -185,6 +197,7 @@ class Parser:
         :param lev: operator precedence
         :return:
         """
+        self.skip()
         result = self.parse_cast_expr()
         while self.has_next():
             _next = self.peek()
@@ -204,7 +217,11 @@ class Parser:
         return result
 
     def parse_stmt(self) -> Node:
-        if self.has('if'):
+        self.skip()
+        if self.has(';'):
+            self.next()
+            return Empty()
+        elif self.has('if'):
             return self.parse_if()
         elif self.has('import'):
             return self.parse_import()
@@ -256,6 +273,8 @@ class Parser:
     def parse_return(self):
         self.expect('return')
         result = Return()
+        if self.peek().type == 'terminator':
+            return result
         result.add(self.parse_binary_expr())
         return result
 
@@ -263,6 +282,7 @@ class Parser:
         self.expect('{')
         block = Block()
         while self.has_next() and not self.has('}'):
+            self.skip()
             block.add(self.parse_stmt())
         self.expect('}')
         return block
@@ -452,6 +472,7 @@ class Parser:
         self.expect('{')
         i = Import()
         while self.has_next() and not self.has('}'):
+            self.skip()
             i.add(self.parse_import_stmt())
         self.expect('}')
         return i
@@ -502,6 +523,7 @@ class Parser:
             self_type.add(PrimitiveType.make_primitive(impl.tok.tok))
         self_var = Declaration(Token('self', 'identifier', 0, 0))
         self_var.add(self_type)
+        self.skip()
         while self.has_next() and not self.has('}'):
             f = self.parse_func_def()
             m = MethodDef(f)
