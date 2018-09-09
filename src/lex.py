@@ -87,7 +87,7 @@ class Lexer:
             self.token = self.src[start:end + 1]
             # self.src = self.src[len(self.token):]
             self.advance(len(self.token))
-            self.token = str(ord(self.token))
+            self.token = str(ord(self.token[1:-1]))
             return True
         else:
             return False

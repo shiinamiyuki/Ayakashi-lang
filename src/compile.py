@@ -28,11 +28,7 @@ class Compiler:
             gen = genx86.CodeGenx86_64()
             gen.filename = filename + '.aya'
             ast.accept(gen)
-            gen.refine()
-            file = open(self.filename + '.s', 'w')
-            file.write(gen.output)
-            file.close()
-            self.call_as()
+
         except RuntimeError as e:
             print(e, file=sys.stderr)
 

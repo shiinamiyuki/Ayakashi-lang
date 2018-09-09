@@ -9,9 +9,12 @@ type A{
 
 }
 
-
+type Optional<T>{
+    data:T
+}
 fn main()->int{
-    return 0;
+    let a:A
+    return a[0]
 }
     '''
     compiler = compile.Compiler()

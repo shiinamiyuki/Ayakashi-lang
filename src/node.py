@@ -121,6 +121,28 @@ class CastExpr(Node):
         visitor.visit_cast_expr(self)
 
 
+class MatchExpr(Node):
+    def __init__(self):
+        super().__init__()
+
+    def type(self):
+        return 'MatchExpr'
+
+    def accept(self, visitor):
+        visitor.visit_match_expr(self)
+
+
+class MatchPair(Node):
+    def __init__(self):
+        super().__init__()
+
+    def type(self):
+        return 'MatchPair'
+
+    def accept(self, visitor):
+        visitor.vist_match_pair(self)
+
+
 class Number(Node):
     def __init__(self, tok: Token):
         super().__init__()
@@ -724,6 +746,17 @@ class Generic(Node):
 
     def __eq__(self, other):
         return self.signature() == other.signature()
+
+
+class For(Node):
+    def __init__(self):
+        super().__init__()
+
+    def type(self):
+        return 'For'
+
+    def accept(self, visitor):
+        visitor.visit_for(self)
 
 
 class TypeInference(Node):

@@ -258,7 +258,7 @@ class CodeGen(Visitor):
             struct_type = struct_type.first()
         if struct_type.is_reference() or struct_type.is_pointer():
             # still a reference
-            self.error("don't do that")
+            self.error("unexpected type: {0}, reference to reference is not allowed")
         struct = self.retrieve_symbol(struct_type.signature())
         if not struct:
             # (struct_type)
@@ -287,9 +287,9 @@ class CodeGen(Visitor):
         ty2 = self.pop_type()
         ty1 = self.pop_type()
         if not ty2.is_int():
-            self.error('int expected in index expr')
+            self.error('int expected in index expr, but found {0}'.format(ty2))
         if not ty1.is_array():
-            self.error('array type expected in index expr')
+            self.error('array type expected in index expr, but found {0}'.format(ty1))
         self.push_type(ty1.first())
 
     def visit_declaration(self, node):
@@ -731,6 +731,28 @@ class CodeGen(Visitor):
         s += self.temp.buffer + '){\n'
         self.clear_temp()
         node.second().accept(self)
+        self.pop_temp()
+        s += self.temp.buffer + '}\n'
+        self.clear_temp()
+        self.write_and_push(s)
+
+    def visit_for(self, node: For):
+        s = 'for('
+        node.first().accept(self)
+        self.pop_temp()
+
+        s += self.temp.buffer + ' ;'
+        self.clear_temp()
+        node.second().accept(self)
+        self.pop_temp()
+
+        s += self.temp.buffer + ' ;'
+        self.clear_temp()
+        node.third().accept(self)
+        self.pop_temp()
+        s += self.temp.buffer + '){\n'
+        self.clear_temp()
+        node.sub_nodes[3].accept(self)
         self.pop_temp()
         s += self.temp.buffer + '}\n'
         self.clear_temp()

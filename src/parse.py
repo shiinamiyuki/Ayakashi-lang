@@ -23,7 +23,7 @@ class Parser:
     def pop_type_scope(self):
         self.types.pop()
 
-    def add_type(self, t: str, i:int= -1):
+    def add_type(self, t: str, i: int = -1):
         self.types[i].append(t)
 
     def init_op_precedence_and_assoc(self):
@@ -149,6 +149,8 @@ class Parser:
             e = UnaryExpr(self.cur())
             e.add(self.parse_type())
             return e
+        if self.has('match'):
+            return self.parse_match_expr()
         else:
             return self.parse_postfix_expr()
 
@@ -191,6 +193,25 @@ class Parser:
         self.expect(')')
         return result
 
+    def parse_match_expr(self)->Node:
+        self.expect('match')
+        m = MatchExpr()
+        m.add(self.parse_binary_expr())
+        self.expect('with')
+        self.expect('{')
+        while self.has_next() and self.has('|'):
+            pair = MatchPair()
+            pair.add(self.parse_binary_expr())
+            self.expect('->')
+            if self.has('{'):
+                pair.add(self.parse_block())
+            else:
+                pair.add(self.parse_binary_expr())
+            m.add(pair)
+        self.expect('}')
+        return m
+
+
     def parse_binary_expr(self, lev: int = 0) -> Node:
         """
         parses binary expressions using precedence climbing
@@ -216,11 +237,28 @@ class Parser:
                     break
         return result
 
+    def parse_for(self) -> Node:
+        self.expect('for')
+        f = For()
+        if self.has('let'):
+            self.next()
+            f.add(self.parse_declaration())
+        else:
+            f.add(self.parse_binary_expr())
+        self.expect(';')
+        f.add(self.parse_binary_expr())
+        self.expect(';')
+        f.add(self.parse_binary_expr())
+        f.add(self.parse_block())
+        return f
+
     def parse_stmt(self) -> Node:
         self.skip()
         if self.has(';'):
             self.next()
             return Empty()
+        elif self.has('for'):
+            return self.parse_for()
         elif self.has('if'):
             return self.parse_if()
         elif self.has('import'):
@@ -300,8 +338,8 @@ class Parser:
                 break
             if self.has('>>'):
                 tok = self.peek()
-                self.token_stream[self.idx + 1] = Token('>',tok.type,tok.line,tok.col)
-                self.token_stream.insert(self.idx + 1, Token('>',tok.type,tok.line,tok.col+1))
+                self.token_stream[self.idx + 1] = Token('>', tok.type, tok.line, tok.col)
+                self.token_stream.insert(self.idx + 1, Token('>', tok.type, tok.line, tok.col + 1))
                 break
             self.expect(',')
         self.expect('>')
@@ -374,7 +412,7 @@ class Parser:
     def parse_interface(self):
         self.expect('interface')
         result = Interface(self.peek())
-        self.add_type(result.tok.tok,0)
+        self.add_type(result.tok.tok, 0)
         self.next()
         self.expect('{')
         while self.has_next() and not self.has('}'):
@@ -387,7 +425,7 @@ class Parser:
         result = Struct(self.peek())
         struct = result
         self.push_type_scope()
-        self.add_type(result.tok.tok,0)
+        self.add_type(result.tok.tok, 0)
         self.next()
         if self.has('<'):
             result = self.parse_generic()
